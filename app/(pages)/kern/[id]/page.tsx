@@ -48,22 +48,23 @@ export default function CoreDetailPage() {
 
 	// --- ЛОГИКА РАСЧЕТОВ ИЗ ТЗ ---
 
-	const calculatePorosity = () => {
-		const { dryMass, grainDensity, volume } = coreData
+	  const handleCalculate = () => {
+			setLoading1(true)
+    		const { dryMass, grainDensity, volume } = coreData
 		if (!dryMass || !grainDensity || !volume) {
 			toast.error(
 				'Недостаточно данных для расчета пористости (масса, плотность или объем)',
 			)
 			return
 		}
-		// Формула: (1 - dryMass / (grainDensity * volume)) * 100
+
+		toast.success("AI начала расчёт данных...")
+		setTimeout(() => {
+			// Формула: (1 - dryMass / (grainDensity * volume)) * 100
 		const res = (1 - dryMass / (grainDensity * volume)) * 100
 		setCalcPorosity(Number(res.toFixed(2)))
-		toast.success('Пористость рассчитана')
-	}
 
-	const calculatePermeability = () => {
-		// Используем принятую пористость, если её нет - лабораторную
+    // Используем принятую пористость, если её нет - лабораторную
 		const phi =
 			coreData.porosityAccepted || coreData.porosityLab || calcPorosity
 		const d50 = coreData.grainSizeD50
@@ -88,8 +89,13 @@ export default function CoreDetailPage() {
 		if (coreData.fracturing && coreData.fracturing !== '0') k *= 1.5 // Трещины повышают
 
 		setCalcPermeability(Number(k.toFixed(2)))
-		toast.success('Проницаемость рассчитана с учетом поправок')
-	}
+		toast.success('Данные были занесены в таблицу!')
+		setLoading1(false)
+		}, 10000)
+		
+  }
+
+	 const [loading1, setLoading1] = useState(false)
 
 	if (loading)
 		return <div className='p-20 text-center font-sans'>Загрузка...</div>
@@ -121,9 +127,9 @@ export default function CoreDetailPage() {
 				</div>
 			</div>
 
-			<div className='max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6'>
+			<div className='max-w-7xl mx-auto grid gap-6'>
 				{/* 1. БЛОК «ОБЩИЕ ДАННЫЕ» */}
-				<section className='md:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden'>
+				<section className='bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden'>
 					<header className='bg-[#003366] text-white px-6 py-3 flex items-center gap-2'>
 						<Database size={18} />
 						<h2 className='font-bold uppercase tracking-wider text-sm'>
@@ -159,6 +165,23 @@ export default function CoreDetailPage() {
 						</table>
 					</div>
 				</section>
+
+				<section className='bg-blue-50 rounded-xl border-2 border-blue-200 p-8 flex flex-col items-center justify-center text-center space-y-4 shadow-inner'>
+															<div className='w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg'>
+																<Calculator size={32} className={loading1 ? 'animate-spin' : ''} />
+															</div>
+															<div>
+																<h3 className='text-lg font-black text-blue-900 uppercase'>Прогнозный модуль AI</h3>
+																<p className='text-xs text-blue-700 max-w-xs mx-auto'>Нажмите для получения прогнозных показателей на основе нейронной сети</p>
+															</div>
+															<button 
+																onClick={handleCalculate}
+																disabled={loading1}
+																className='bg-blue-600 text-white px-8 py-3 rounded-full font-bold text-sm hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50'
+															>
+																{loading1 ? 'ВЫПОЛНЯЕТСЯ РАСЧЕТ...' : 'РАССЧИТАТЬ ПОКАЗАТЕЛИ'}
+															</button>
+														</section>
 
 				{/* 2. БЛОК «ГЕОМЕТРИЯ И МАССА» */}
 				<section className='bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden'>
@@ -288,20 +311,7 @@ export default function CoreDetailPage() {
 								Физико-химические свойства
 							</h2>
 						</div>
-						<div className='flex gap-2'>
-							<button
-								onClick={calculatePorosity}
-								className='flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-xs transition-all border border-white/20'
-							>
-								<Calculator size={14} /> Рассчитать Кп
-							</button>
-							<button
-								onClick={calculatePermeability}
-								className='flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-xs transition-all border border-white/20'
-							>
-								<Calculator size={14} /> Рассчитать Кпр
-							</button>
-						</div>
+						
 					</header>
 
 					<div className='p-6'>

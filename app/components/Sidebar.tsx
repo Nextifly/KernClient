@@ -17,9 +17,9 @@ const Sidebar = () => {
 	const isActive = (path: string) => '/' + pathname.split('/')[1] == path
 
 	const navLinks = [
-		{ name: 'Главное', href: '/', icon: MainIcon },
+		{ name: 'Главная', href: '/', icon: MainIcon },
 		{ name: 'Цифровой Керн', href: '/kern', icon: NumberIcon },
-		{ name: 'подумать', href: '/calc', icon: CalcIcon },
+		{ name: 'Цифровое моделирование ПСВ', href: '/experiment', icon: CalcIcon },
 		{ name: 'Выход', href: '/exit', icon: ExitIcon },
 	]
 
