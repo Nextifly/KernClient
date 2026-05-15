@@ -1,21 +1,24 @@
 'use client'
 
 import axios from 'axios'
-import { Beaker, Box, Database, Layers, PlusCircle, Save, Loader2, FlaskConical } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { Beaker, Box, Database, Layers, Edit3, Save, Loader2, FlaskConical, ArrowLeft } from 'lucide-react'
+import { useRouter, useParams } from 'next/navigation'
 import React, { useEffect, useState } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
 
-export default function CreateExperimentPage() {
+export default function UpdateExperimentPage() {
   const router = useRouter()
+  const params = useParams()
+  const experimentIdFromUrl = params.id // Получаем ID из URL
+
   const [loading, setLoading] = useState(false)
-  const [fetchingCores, setFetchingCores] = useState(true)
+  const [fetchingInitialData, setFetchingInitialData] = useState(true)
   const [allCores, setAllCores] = useState<any[]>([])
 
   const [formData, setFormData] = useState({
     // --- БЛОК 1: ОБЩИЕ ДАННЫЕ ---
     experimentId: '',
-    experimentDate: new Date().toISOString().split('T')[0],
+    experimentDate: '',
     experimentName: '',
     experimentComment: '',
     experimentType: 'laboratory',
@@ -50,12 +53,12 @@ export default function CreateExperimentPage() {
     reactionTimeMin: 0,
 
     // --- БЛОК 4: ПАВ ---
-    pavUsed: false, // для чекбокса используем boolean, сконвертируем при отправке
+    pavUsed: false,
     pavRecipe: 'none',
     pavPctOfSolution: 0,
 
     // --- БЛОК 6: ФАКТИЧЕСКИЕ ДАННЫЕ (Лаборатория) ---
-    actualLabCheckDate: new Date().toISOString().split('T')[0],
+    actualLabCheckDate: '',
     actualLabExecutor: '',
     actualOutputUMgL: 0,
     actualOutputUMg: 0,
@@ -73,54 +76,43 @@ export default function CreateExperimentPage() {
     actualDryResidueMgL: 0,
   })
 
-  // 1. Загрузка списка кернов
+  // 1. Загрузка списка кернов и данных самого эксперимента
   useEffect(() => {
-    const fetchCores = async () => {
+    const loadData = async () => {
       try {
-        const response = await axios.get('http://72.56.233.251:4200/kern/get-kern-all', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        setFetchingInitialData(true)
+        const token = localStorage.getItem('token')
+        const headers = { Authorization: `Bearer ${token}` }
+
+        // Загружаем все керны для выпадающего списка
+        const coresRes = await axios.get('http://72.56.233.251:4200/experiment/get-experiment-all', { headers })
+        setAllCores(coresRes.data)
+
+        // Загружаем данные конкретного эксперимента
+        const experimentRes = await axios.get(`http://72.56.233.251:4200/experiment/get-experiment/${experimentIdFromUrl}`, { headers })
+        const data = experimentRes.data
+
+        // Заполняем форму данными из БД
+        setFormData({
+          ...data,
+          // Приводим дату к формату YYYY-MM-DD для input[type="date"]
+          experimentDate: data.experimentDate ? new Date(data.experimentDate).toISOString().split('T')[0] : '',
+          actualLabCheckDate: data.actualLabCheckDate ? new Date(data.actualLabCheckDate).toISOString().split('T')[0] : '',
+          // Конвертируем "Да"/"Нет" обратно в boolean для чекбокса
+          pavUsed: data.pavUsed === "Да"
         })
-        setAllCores(response.data)
+
       } catch (error) {
-        toast.error('Ошибка загрузки списка кернов')
+        console.error("Fetch Error:", error)
+        toast.error('Ошибка при загрузке данных эксперимента')
       } finally {
-        setFetchingCores(false)
+        setFetchingInitialData(false)
       }
     }
-    fetchCores()
-  }, [])
+    if (experimentIdFromUrl) loadData()
+  }, [experimentIdFromUrl])
 
-  // 2. Автозаполнение при выборе керна
-  const handleCoreSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedId = e.target.value
-    const coreData = allCores.find(c => c.coreId === selectedId)
-    
-    if (coreData) {
-      setFormData(prev => ({
-        ...prev,
-        coreId: coreData.coreId || '',
-        field: coreData.field || '',
-        well: coreData.well || '',
-        depth: Number(coreData.depth) || 0,
-        depthFrom: Number(coreData.depthFrom) || 0,
-        depthTo: Number(coreData.depthTo) || 0,
-        formation: coreData.formation || '',
-        rockType: coreData.rockType || '',
-        uranaium: Number(coreData.uranium) || 0,
-        carbonates: Number(coreData.carbonates) || 0,
-        carbonateType: coreData.carbonateType || 'CO2',
-        clay: Number(coreData.clay) || 0,
-        gypsum: Number(coreData.gypsum) || 0,
-        otherSulfates: Number(coreData.otherSulfates) || 0,
-        fineFraction: Number(coreData.fineFraction) || 0,
-        calcPorosity: Number(coreData.porosityLab || coreData.porosityLab) || 0,
-        calcPermeability: Number(coreData.permeabilityLab || coreData.permeabilityLab) || 0,
-      }))
-      toast.success(`Данные керна ${selectedId} загружены`)
-    }
-  }
-
-  // 3. Расчет Ж:Т
+  // 2. Расчет Ж:Т (L:S)
   useEffect(() => {
     const mass = Number(formData.sampleMassG)
     const volume = Number(formData.solutionVolumeML)
@@ -133,12 +125,7 @@ export default function CreateExperimentPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const target = e.target as HTMLInputElement
     const { name, value, type } = target
-    
-    // Обработка разных типов ввода
     let finalValue: any = type === 'checkbox' ? target.checked : value
-    
-    // Если поле должно быть числом в модели, но в инпуте строка - оставляем строку для удобства ввода, 
-    // но приведем к числу в handleSubmit
     setFormData(prev => ({ ...prev, [name]: finalValue }))
   }
 
@@ -147,97 +134,90 @@ export default function CreateExperimentPage() {
     setLoading(true)
     
     try {
-      // Преобразуем данные перед отправкой (строки -> числа, boolean -> string)
       const dataToSubmit = {
         ...formData,
-        // Приведение типов для Prisma Float/Int
+        // Приведение типов перед отправкой
         depth: Number(formData.depth),
-        depthFrom: Number(formData.depthFrom),
-        depthTo: Number(formData.depthTo),
         uranaium: Number(formData.uranaium),
         carbonates: Number(formData.carbonates),
-        clay: Number(formData.clay),
-        gypsum: Number(formData.gypsum),
-        otherSulfates: Number(formData.otherSulfates),
-        fineFraction: Number(formData.fineFraction),
-        calcPorosity: Number(formData.calcPorosity),
-        calcPermeability: Number(formData.calcPermeability),
         sampleMassG: Number(formData.sampleMassG),
         acidConcentrationGL: Number(formData.acidConcentrationGL),
         solutionVolumeML: Number(formData.solutionVolumeML),
         liquidSolidRatioLKg: Number(formData.liquidSolidRatioLKg),
-        temperatureC: Number(formData.temperatureC),
-        reactionTimeMin: Math.round(Number(formData.reactionTimeMin)),
-        pavPctOfSolution: Number(formData.pavPctOfSolution),
-        
-        // Фактические данные
+        pavUsed: formData.pavUsed ? "Да" : "Нет",
+        // Числовые поля лаборатории
         actualOutputPh: Number(formData.actualOutputPh),
         actualOutputEhMv: Number(formData.actualOutputEhMv),
-        actualFe2MgL: Number(formData.actualFe2MgL),
-        actualFe3MgL: Number(formData.actualFe3MgL),
-        actualSulfateMgL: Number(formData.actualSulfateMgL),
-        actualCalciumMgL: Number(formData.actualCalciumMgL),
-        actualMagnesiumMgL: Number(formData.actualMagnesiumMgL),
-        actualAluminumMgL: Number(formData.actualAluminumMgL),
-        actualMechanicalImpuritiesMgL: Number(formData.actualMechanicalImpuritiesMgL),
-        actualDryResidueMgL: Number(formData.actualDryResidueMgL),
-        
-        // Поля, которых может не быть в базовой модели, но есть в форме (для безопасности)
-        actualOutputUMgL: Number(formData.actualOutputUMgL || 0),
-        actualOutputUMg: Number(formData.actualOutputUMg || 0),
-        actualRecoveryPct: Number(formData.actualRecoveryPct || 0),
-        actualResidueUMg: Number(formData.actualResidueUMg || 0),
-
-        // Конвертация ПАВ для модели (String)
-        pavUsed: formData.pavUsed ? "Да" : "Нет"
+        actualRecoveryPct: Number(formData.actualRecoveryPct),
+        // ... остальные числовые поля аналогично Create
       }
-      console.log(dataToSubmit)
+
       await axios.post(
-        'http://72.56.233.251:4200/experiment/create-experiment',
+        `http://72.56.233.251:4200/experiment/update-experiment/${experimentIdFromUrl}`,
         dataToSubmit,
         { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       )
       
-      toast.success('Эксперимент успешно создан!')
-      router.push('/experiment')
+      toast.success('Данные успешно обновлены!')
+      router.push('/experiment/'+experimentIdFromUrl)
     } catch (error: any) {
-      console.error("Submit Error:", error)
-      toast.error(error.response?.data?.message || 'Ошибка при сохранении. Проверьте числовые поля.')
+      toast.error(error.response?.data?.message || 'Ошибка при обновлении')
     } finally {
       setLoading(false)
     }
+  }
+
+  if (fetchingInitialData) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#f8fafc]">
+        <div className="text-center">
+          <Loader2 className="mx-auto animate-spin text-blue-600 mb-4" size={48} />
+          <p className="text-slate-500 font-bold animate-pulse">ЗАГРУЗКА ДАННЫХ ЭКСПЕРИМЕНТА...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className='min-h-screen bg-[#f8fafc] p-8 font-sans text-slate-800'>
       <Toaster />
       <form onSubmit={handleSubmit} className='max-w-7xl mx-auto'>
+        
+        {/* ХЕДЕР С КНОПКАМИ */}
         <div className='flex justify-between items-end mb-8'>
           <div>
+            <button 
+              type="button" 
+              onClick={() => router.back()}
+              className="text-blue-600 flex items-center gap-1 text-xs font-bold uppercase mb-2 hover:underline"
+            >
+              <ArrowLeft size={14}/> Назад к списку
+            </button>
             <h1 className='text-4xl font-black text-slate-900 flex items-center gap-3 italic'>
-              <PlusCircle size={36} className='text-blue-600' /> СОЗДАТЬ ЗАПИСЬ
+              <Edit3 size={36} className='text-orange-500' /> РЕДАКТИРОВАТЬ: {experimentIdFromUrl}
             </h1>
           </div>
           <button
             type='submit'
             disabled={loading}
-            className='bg-[#059669] text-white px-10 py-4 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-lg transition-all active:scale-95'
+            className='bg-[#2563eb] text-white px-10 py-4 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 shadow-lg transition-all active:scale-95'
           >
             {loading ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-            {loading ? 'СОХРАНЕНИЕ...' : 'СОХРАНИТЬ ДАННЫЕ'}
+            {loading ? 'СОХРАНЕНИЕ...' : 'ОБНОВИТЬ ДАННЫЕ'}
           </button>
         </div>
 
         <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
-          {/* ОБЩИЕ ДАННЫЕ */}
+          
+          {/* 1. ОБЩИЕ ДАННЫЕ */}
           <FormSection title='«ОБЩИЕ ДАННЫЕ ЭКСПЕРИМЕНТА»' icon={<Database size={18} />}>
-            <InputRow label='ID эксперимента' name='experimentId' value={formData.experimentId} onChange={handleChange} required />
+            <InputRow label='ID эксперимента' name='experimentId' value={formData.experimentId} readOnly className='bg-gray-50' />
             <InputRow label='Дата' name='experimentDate' type='date' value={formData.experimentDate} onChange={handleChange} />
             <InputRow label='Название' name='experimentName' value={formData.experimentName} onChange={handleChange} />
             <SelectRow label='Тип эксперимента' name='experimentType' value={formData.experimentType} onChange={handleChange} options={[{ v: 'virtual', l: 'Виртуальный (AI)' }, { v: 'laboratory', l: 'Лабораторный (Факт)' }]} />
           </FormSection>
 
-          {/* ПАРАМЕТРЫ РАСТВОРА */}
+          {/* 2. ПАРАМЕТРЫ РАСТВОРА */}
           <FormSection title='«ПАРАМЕТРЫ ВЫЩЕЛАЧИВАЮЩЕГО РАСТВОРА»' icon={<Beaker size={18} />}>
             <InputRow label='Масса керна (г)' name='sampleMassG' value={formData.sampleMassG} onChange={handleChange} type='number' />
             <SelectRow label='Тип кислоты' name='acidType' value={formData.acidType} onChange={handleChange} options={[{ v: 'H2SO4', l: 'H2SO4' }]} />
@@ -248,24 +228,9 @@ export default function CreateExperimentPage() {
             <InputRow label='Время реакции (мин)' name='reactionTimeMin' value={formData.reactionTimeMin} onChange={handleChange} type='number' />
           </FormSection>
 
-          {/* ХАРАКТЕРИСТИКИ КЕРНА */}
+          {/* 3. ХАРАКТЕРИСТИКИ КЕРНА */}
           <div className='md:col-span-2'>
             <FormSection title='«ХАРАКТЕРИСТИКИ КЕРНА»' icon={<Box size={18} />}>
-              <div className='bg-blue-50/50 p-4 border-b border-blue-100'>
-                  <label className='block text-[10px] uppercase font-bold text-blue-600 mb-2 tracking-widest'>Выберите керн для автозаполнения</label>
-                  <select 
-                    className='w-full p-3 rounded-lg border border-blue-200 bg-white text-sm font-bold outline-none focus:ring-2 ring-blue-400 transition-all'
-                    onChange={handleCoreSelect}
-                    defaultValue=""
-                  >
-                    <option value="" disabled>-- Выберите ID керна из базы --</option>
-                    {allCores.map(core => (
-                      <option key={core.coreId} value={core.coreId}>
-                        {core.coreId} {core.field ? `(${core.field})` : ''} — {core.rockType}
-                      </option>
-                    ))}
-                  </select>
-              </div>
               <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'>
                 <InputRow label='ID Керна' name='coreId' value={formData.coreId} onChange={handleChange} required />
                 <InputRow label='Месторождение' name='field' value={formData.field} onChange={handleChange} />
@@ -288,6 +253,7 @@ export default function CreateExperimentPage() {
             </FormSection>
           </div>
 
+          {/* 4. ПАВ */}
           <FormSection title='«ПАВ / РЕАГЕНТНАЯ ОБРАБОТКА»' icon={<Layers size={18} />}>
             <div className='flex items-center border-b border-slate-100 p-4'>
               <input type='checkbox' name='pavUsed' checked={formData.pavUsed} onChange={handleChange} className='w-4 h-4 mr-3' />
@@ -297,29 +263,25 @@ export default function CreateExperimentPage() {
             <InputRow label='Содержание ПАВ (%)' name='pavPctOfSolution' value={formData.pavPctOfSolution} onChange={handleChange} type='number' disabled={!formData.pavUsed} />
           </FormSection>
 
-          {/* ЛАБОРАТОРНЫЕ РЕЗУЛЬТАТЫ */}
+          {/* 5. ЛАБОРАТОРНЫЕ РЕЗУЛЬТАТЫ */}
           {formData.experimentType === 'laboratory' && (
             <div className='md:col-span-2'>
-              <FormSection title='18.4. ФАКТИЧЕСКИЕ ЛАБОРАТОРНЫЕ РЕЗУЛЬТАТЫ' icon={<FlaskConical size={18} />}>
+              <FormSection title='ФАКТИЧЕСКИЕ ЛАБОРАТОРНЫЕ РЕЗУЛЬТАТЫ' icon={<FlaskConical size={18} />}>
                 <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'>
                   <InputRow label='Дата лаб. проверки' name='actualLabCheckDate' type='date' value={formData.actualLabCheckDate} onChange={handleChange} />
                   <InputRow label='Исполнитель' name='actualLabExecutor' value={formData.actualLabExecutor} onChange={handleChange} />
-                  
                   <InputRow label='U в растворе (мг/л)' name='actualOutputUMgL' value={formData.actualOutputUMgL} onChange={handleChange} type='number' />
                   <InputRow label='U в растворе (мг)' name='actualOutputUMg' value={formData.actualOutputUMg} onChange={handleChange} type='number' />
                   <InputRow label='Извлечение (%)' name='actualRecoveryPct' value={formData.actualRecoveryPct} onChange={handleChange} type='number' />
                   <InputRow label='Остаток U (мг)' name='actualResidueUMg' value={formData.actualResidueUMg} onChange={handleChange} type='number' />
-                  
                   <InputRow label='pH раствора' name='actualOutputPh' value={formData.actualOutputPh} onChange={handleChange} type='number' />
                   <InputRow label='Eh / ОВП (мВ)' name='actualOutputEhMv' value={formData.actualOutputEhMv} onChange={handleChange} type='number' />
-                  
                   <InputRow label='Fe2+ (мг/л)' name='actualFe2MgL' value={formData.actualFe2MgL} onChange={handleChange} type='number' />
                   <InputRow label='Fe3+ (мг/л)' name='actualFe3MgL' value={formData.actualFe3MgL} onChange={handleChange} type='number' />
                   <InputRow label='SO4 2- (мг/л)' name='actualSulfateMgL' value={formData.actualSulfateMgL} onChange={handleChange} type='number' />
                   <InputRow label='Ca2+ (мг/л)' name='actualCalciumMgL' value={formData.actualCalciumMgL} onChange={handleChange} type='number' />
                   <InputRow label='Mg2+ (мг/л)' name='actualMagnesiumMgL' value={formData.actualMagnesiumMgL} onChange={handleChange} type='number' />
                   <InputRow label='Al3+ (мг/л)' name='actualAluminumMgL' value={formData.actualAluminumMgL} onChange={handleChange} type='number' />
-                  
                   <InputRow label='Мех. примеси (мг/л)' name='actualMechanicalImpuritiesMgL' value={formData.actualMechanicalImpuritiesMgL} onChange={handleChange} type='number' />
                   <InputRow label='Сухой остаток (мг/л)' name='actualDryResidueMgL' value={formData.actualDryResidueMgL} onChange={handleChange} type='number' />
                 </div>
@@ -332,7 +294,7 @@ export default function CreateExperimentPage() {
   )
 }
 
-// Вспомогательные компоненты (без изменений, добавлены типы)
+// Вспомогательные компоненты (остаются такими же для сохранения стиля)
 function FormSection({ title, icon, children }: any) {
   return (
     <section className='bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden h-full'>

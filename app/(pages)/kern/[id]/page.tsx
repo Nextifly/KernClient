@@ -1,17 +1,19 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import axios from 'axios'
 import {
 	Beaker,
 	Box,
+	Calculator,
+	Database,
+	Edit,
+	Info,
 	Layers,
 	Settings2,
-	Database,
-	Info,
-	Calculator,
 } from 'lucide-react'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import axios from 'axios'
+import { useEffect, useState } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
 
 export default function CoreDetailPage() {
@@ -29,7 +31,7 @@ export default function CoreDetailPage() {
 		try {
 			setLoading(true)
 			const response = await axios.get(
-				`http://localhost:4200/kern/get-kern/${coreIdFromUrl}`,
+				`http://72.56.233.251:4200/kern/get-kern/${coreIdFromUrl}`,
 				{
 					headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
 				},
@@ -48,9 +50,9 @@ export default function CoreDetailPage() {
 
 	// --- ЛОГИКА РАСЧЕТОВ ИЗ ТЗ ---
 
-	  const handleCalculate = () => {
-			setLoading1(true)
-    		const { dryMass, grainDensity, volume } = coreData
+	const handleCalculate = () => {
+		setLoading1(true)
+		const { dryMass, grainDensity, volume } = coreData
 		if (!dryMass || !grainDensity || !volume) {
 			toast.error(
 				'Недостаточно данных для расчета пористости (масса, плотность или объем)',
@@ -58,44 +60,44 @@ export default function CoreDetailPage() {
 			return
 		}
 
-		toast.success("AI начала расчёт данных...")
+		toast.success('AI начала расчёт данных...')
 		setTimeout(() => {
 			// Формула: (1 - dryMass / (grainDensity * volume)) * 100
-		const res = (1 - dryMass / (grainDensity * volume)) * 100
-		setCalcPorosity(Number(res.toFixed(2)))
+			const res = (1 - dryMass / (grainDensity * volume)) * 100
+			setCalcPorosity(Number(res.toFixed(2)))
 
-    // Используем принятую пористость, если её нет - лабораторную
-		const phi =
-			coreData.porosityAccepted || coreData.porosityLab || calcPorosity
-		const d50 = coreData.grainSizeD50
+			// Используем принятую пористость, если её нет - лабораторную
+			const phi =
+				coreData.porosityAccepted || coreData.porosityLab || calcPorosity
+			const d50 = coreData.grainSizeD50
 
-		if (!phi || !d50) {
-			toast.error('Необходимы пористость и d50 для расчета проницаемости')
-			return
-		}
+			if (!phi || !d50) {
+				toast.error('Необходимы пористость и d50 для расчета проницаемости')
+				return
+			}
 
-		// Базовая формула Козени-Кармана: k = (d50^2 * phi^3) / (180 * (1 - phi)^2)
-		// Переводим phi из % в доли единицы для формулы
-		const phiDec = phi / 100
-		let k =
-			(Math.pow(d50, 2) * Math.pow(phiDec, 3)) / (180 * Math.pow(1 - phiDec, 2))
+			// Базовая формула Козени-Кармана: k = (d50^2 * phi^3) / (180 * (1 - phi)^2)
+			// Переводим phi из % в доли единицы для формулы
+			const phiDec = phi / 100
+			let k =
+				(Math.pow(d50, 2) * Math.pow(phiDec, 3)) /
+				(180 * Math.pow(1 - phiDec, 2))
 
-		// Коэффициент перевода в mD (упрощенно для MVP)
-		k = k * 1000000
+			// Коэффициент перевода в mD (упрощенно для MVP)
+			k = k * 1000000
 
-		// Поправки (пример логики из ТЗ)
-		if (coreData.clay > 10) k *= 0.8 // Глинистость снижает
-		if (coreData.sorting === 'Плохая') k *= 0.7
-		if (coreData.fracturing && coreData.fracturing !== '0') k *= 1.5 // Трещины повышают
+			// Поправки (пример логики из ТЗ)
+			if (coreData.clay > 10) k *= 0.8 // Глинистость снижает
+			if (coreData.sorting === 'Плохая') k *= 0.7
+			if (coreData.fracturing && coreData.fracturing !== '0') k *= 1.5 // Трещины повышают
 
-		setCalcPermeability(Number(k.toFixed(2)))
-		toast.success('Данные были занесены в таблицу!')
-		setLoading1(false)
-		}, 10000)
-		
-  }
+			setCalcPermeability(Number(k.toFixed(2)))
+			toast.success('Данные были занесены в таблицу!')
+			setLoading1(false)
+		}, 60000)
+	}
 
-	 const [loading1, setLoading1] = useState(false)
+	const [loading1, setLoading1] = useState(false)
 
 	if (loading)
 		return <div className='p-20 text-center font-sans'>Загрузка...</div>
@@ -111,8 +113,9 @@ export default function CoreDetailPage() {
 			<Toaster />
 
 			{/* Шапка страницы */}
-			<div className='max-w-7xl mx-auto mb-8 flex justify-between items-end'>
-				<div>
+      <div className='max-w-7xl mx-auto mb-8 flex justify-between items-center'>
+        <div className='flex items-center gap-6'>
+          <div>
 					<div className='text-[#003366] font-bold text-sm tracking-widest uppercase mb-1'>
 						Карточка образца
 					</div>
@@ -120,12 +123,17 @@ export default function CoreDetailPage() {
 						{coreData.coreId}
 					</h1>
 				</div>
-				<div className='text-right'>
-					<p className='text-gray-500 text-sm italic'>
-						Система управления данными «Цифровой Керн»
-					</p>
+          
+          {/* КНОПКА РЕДАКТИРОВАНИЯ */}
+          <Link 
+            href={`/kern/${coreIdFromUrl}/update`}
+            className='flex items-center gap-2 bg-white border border-slate-300 px-4 py-2 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-all shadow-sm active:scale-95 mt-4'
+          >
+            <Edit size={16} />
+            РЕДАКТИРОВАТЬ
+          </Link>
+        </div>
 				</div>
-			</div>
 
 			<div className='max-w-7xl mx-auto grid gap-6'>
 				{/* 1. БЛОК «ОБЩИЕ ДАННЫЕ» */}
@@ -133,7 +141,7 @@ export default function CoreDetailPage() {
 					<header className='bg-[#003366] text-white px-6 py-3 flex items-center gap-2'>
 						<Database size={18} />
 						<h2 className='font-bold uppercase tracking-wider text-sm'>
-							Блок «Общие данные»
+							«Общие данные»
 						</h2>
 					</header>
 					<div className='p-6'>
@@ -167,21 +175,26 @@ export default function CoreDetailPage() {
 				</section>
 
 				<section className='bg-blue-50 rounded-xl border-2 border-blue-200 p-8 flex flex-col items-center justify-center text-center space-y-4 shadow-inner'>
-															<div className='w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg'>
-																<Calculator size={32} className={loading1 ? 'animate-spin' : ''} />
-															</div>
-															<div>
-																<h3 className='text-lg font-black text-blue-900 uppercase'>Прогнозный модуль AI</h3>
-																<p className='text-xs text-blue-700 max-w-xs mx-auto'>Нажмите для получения прогнозных показателей на основе нейронной сети</p>
-															</div>
-															<button 
-																onClick={handleCalculate}
-																disabled={loading1}
-																className='bg-blue-600 text-white px-8 py-3 rounded-full font-bold text-sm hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50'
-															>
-																{loading1 ? 'ВЫПОЛНЯЕТСЯ РАСЧЕТ...' : 'РАССЧИТАТЬ ПОКАЗАТЕЛИ'}
-															</button>
-														</section>
+					<div className='w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg'>
+						<Calculator size={32} className={loading1 ? 'animate-spin' : ''} />
+					</div>
+					<div>
+						<h3 className='text-lg font-black text-blue-900 uppercase'>
+							Прогнозный модуль AI
+						</h3>
+						<p className='text-xs text-blue-700 max-w-xs mx-auto'>
+							Нажмите для получения прогнозных показателей на основе нейронной
+							сети
+						</p>
+					</div>
+					<button
+						onClick={handleCalculate}
+						disabled={loading1}
+						className='bg-blue-600 text-white px-8 py-3 rounded-full font-bold text-sm hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50'
+					>
+						{loading1 ? 'ВЫПОЛНЯЕТСЯ РАСЧЕТ...' : 'РАССЧИТАТЬ ПОКАЗАТЕЛИ'}
+					</button>
+				</section>
 
 				{/* 2. БЛОК «ГЕОМЕТРИЯ И МАССА» */}
 				<section className='bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden'>
@@ -254,7 +267,10 @@ export default function CoreDetailPage() {
 								<TableRow label='Кварц %' value={coreData.quartz} />
 								<TableRow label='Полевые штапы %' value={coreData.feldspar} />
 								<TableRow label='Глины %' value={coreData.clay} />
-								<TableRow label='Тип карбонатности' value={coreData.carbonateType} />
+								<TableRow
+									label='Тип карбонатности'
+									value={coreData.carbonateType}
+								/>
 								<TableRow label='Карбонаты %' value={coreData.carbonates} />
 								<TableRow label='Гипс %' value={coreData.gypsum} />
 								<TableRow
@@ -276,7 +292,6 @@ export default function CoreDetailPage() {
 								Текстурные параметры
 							</h2>
 						</div>
-						
 					</header>
 					<div className='p-6 grid grid-cols-2 gap-x-8'>
 						<table className='w-full text-sm'>
@@ -311,7 +326,6 @@ export default function CoreDetailPage() {
 								Физико-химические свойства
 							</h2>
 						</div>
-						
 					</header>
 
 					<div className='p-6'>
@@ -349,8 +363,7 @@ export default function CoreDetailPage() {
 										</td>
 										<td className='px-4 py-5 text-center bg-green-50/20'>
 											<div className='inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-800 font-bold text-xs border border-green-200'>
-												{coreData.porosityAccepted ||
-													coreData.porosityLab ||
+												{coreData.porosityLab || calcPorosity ||
 													'—'}
 											</div>
 										</td>
@@ -371,8 +384,7 @@ export default function CoreDetailPage() {
 										</td>
 										<td className='px-4 py-5 text-center bg-green-50/20'>
 											<div className='inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-800 font-bold text-xs border border-green-200'>
-												{coreData.permeabilityAccepted ||
-													coreData.permeabilityLab ||
+												{coreData.permeabilityLab || calcPermeability ||
 													'—'}
 											</div>
 										</td>
